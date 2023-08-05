@@ -1,6 +1,7 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import * as Ably from 'ably/promises'
+import * as uuid from 'uuid'
 
 dotenv.config()
 
@@ -18,9 +19,13 @@ const ANSWERS_CHANNEL_NAME = 'answers'
 
 const ably = new Ably.Rest({ key: ABLY_API_KEY })
 
+const clientIdToName: Record<string, string> = {}
+
 app.post('/client/token', async (req, res) => {
+  const clientId = uuid.v4()
+  clientIdToName[clientId] = String(req.query.name || 'Anonymous')
   const token = await ably.auth.requestToken({
-    clientId: 'foo',
+    clientId,
     capability: {
       // Only the server can publish to the quiz channel
       [QUIZ_CHANNEL_NAME]: ['subscribe', 'presence'],
@@ -37,7 +42,7 @@ app.listen(PORT, HOST, () => {
 })
 
 class Quiz {
-  minClientCount = 1
+  minClientCount = 2
   state: 'waiting' | 'running' | 'finished' = 'waiting'
   quizChannel: Ably.Types.RealtimeChannelPromise
   answersChannel: Ably.Types.RealtimeChannelPromise
@@ -61,7 +66,7 @@ class Quiz {
   }> = []
 
   currentQuestionId = 0
-  timePerQuestion = 2000 // ms
+  timePerQuestion = 5000 // ms
 
   constructor() {
     const realtime = new Ably.Realtime({ key: ABLY_API_KEY })
@@ -160,7 +165,8 @@ class Quiz {
 
     const leaderboard = Object.entries(scores).map(([clientId, score]) => ({
       clientId,
-      score
+      score,
+      name: clientIdToName[clientId]
     }))
     leaderboard.sort((a, b) => a.score - b.score).reverse()
 

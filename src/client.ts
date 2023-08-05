@@ -9,12 +9,21 @@ const PORT = parseInt(process.env.PORT || '5000')
 const HOST = process.env.HOST || 'localhost'
 
 const main = async () => {
+  const rl = readline.createInterface({ input, output })
+  const name = await rl.question('What is your name?: ')
+  rl.close()
+
   const realtime = new Ably.Realtime({
-    authUrl: `http://${HOST}:${PORT}/client/token`,
+    authUrl: `http://${HOST}:${PORT}/client/token?name=${encodeURIComponent(
+      name
+    )}`,
     authMethod: 'POST'
   })
   const quizChannel = realtime.channels.get('quiz')
   const answerChannel = realtime.channels.get('answers')
+
+  console.log(`Hi ${name}!`)
+  console.log('Waiting for enough players...')
 
   let abortPreviousQuestion: null | (() => void) = null
 
@@ -59,11 +68,12 @@ const main = async () => {
     }
     console.log()
     console.log('Results')
-    console.table(message.data)
+    console.table(message.data, ['name', 'score'])
     process.exit(0)
   })
 
   await quizChannel.presence.enter()
+  process.on('exit', () => quizChannel.presence.leave())
 }
 
 main()
