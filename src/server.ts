@@ -11,25 +11,33 @@ if (!ABLY_API_KEY) {
   console.error('Please set ABLY_API_KEY environment variable')
   process.exit(1)
 }
+const PORT = parseInt(process.env.PORT || '5000')
+const HOST = process.env.HOST || 'localhost'
+const QUIZ_CHANNEL_NAME = 'quiz'
+const ANSWERS_CHANNEL_NAME = 'answers'
 
 const ably = new Ably.Rest({ key: ABLY_API_KEY })
 
 app.post('/client/token', async (req, res) => {
-  const token = await ably.auth.requestToken({ clientId: 'foo' })
+  const token = await ably.auth.requestToken({
+    clientId: 'foo',
+    capability: {
+      // Only the server can publish to the quiz channel
+      [QUIZ_CHANNEL_NAME]: ['subscribe', 'presence'],
+      // Clients can only publish to the answers channel so they can't see other client's answers
+      [ANSWERS_CHANNEL_NAME]: ['publish']
+    }
+  })
   console.log('Token requested')
   res.json(token)
 })
 
-const PORT = parseInt(process.env.PORT || '5000')
-const HOST = process.env.HOST || 'localhost'
 app.listen(PORT, HOST, () => {
   console.log(`Server listening on ${HOST}:${PORT}`)
 })
 
 class Quiz {
   minClientCount = 1
-  quizChannelName = 'quiz'
-  answersChannelName = 'answers'
   state: 'waiting' | 'running' | 'finished' = 'waiting'
   quizChannel: Ably.Types.RealtimeChannelPromise
   answersChannel: Ably.Types.RealtimeChannelPromise
@@ -58,13 +66,13 @@ class Quiz {
   constructor() {
     const realtime = new Ably.Realtime({ key: ABLY_API_KEY })
 
-    this.quizChannel = realtime.channels.get(this.quizChannelName)
+    this.quizChannel = realtime.channels.get(QUIZ_CHANNEL_NAME)
     this.quizChannel.presence.subscribe('enter', () => {
       console.log('Client connected')
       this.startQuizIfEnoughClients()
     })
 
-    this.answersChannel = realtime.channels.get(this.answersChannelName)
+    this.answersChannel = realtime.channels.get(ANSWERS_CHANNEL_NAME)
     this.answersChannel.subscribe('answer', (message) => {
       this.onAnswer(message)
     })
