@@ -28,37 +28,51 @@ app.listen(PORT, HOST, () => {
 
 class Quiz {
   minClientCount = 1
-  channelName = 'quiz'
+  quizChannelName = 'quiz'
+  answersChannelName = 'answers'
   state: 'waiting' | 'running' | 'finished' = 'waiting'
-  channel: Ably.Types.RealtimeChannelPromise
+  quizChannel: Ably.Types.RealtimeChannelPromise
+  answersChannel: Ably.Types.RealtimeChannelPromise
   questions = [
     {
       question: 'Question 1',
       options: ['Correct', 'Wrong', 'Incorrect'],
-      answerIndex: 0
+      answer: 0
     },
     {
       question: 'Question 2',
       options: ['Wrong', 'Correct', 'Incorrect'],
-      answerIndex: 1
+      answer: 1
     }
   ]
 
-  nextQuestionIndex = 0
-  timePerQuestion = 5000 // ms
+  clientAnswers: Array<{
+    clientId: string
+    questionId: number
+    answer: number
+  }> = []
+
+  currentQuestionId = 0
+  timePerQuestion = 2000 // ms
 
   constructor() {
     const realtime = new Ably.Realtime({ key: ABLY_API_KEY })
-    this.channel = realtime.channels.get(this.channelName)
-    this.channel.presence.subscribe('enter', () => {
+
+    this.quizChannel = realtime.channels.get(this.quizChannelName)
+    this.quizChannel.presence.subscribe('enter', () => {
       console.log('Client connected')
       this.startQuizIfEnoughClients()
+    })
+
+    this.answersChannel = realtime.channels.get(this.answersChannelName)
+    this.answersChannel.subscribe('answer', (message) => {
+      this.onAnswer(message)
     })
   }
 
   async startQuizIfEnoughClients() {
     if (this.state !== 'waiting') return
-    const presence = await this.channel.presence.get()
+    const presence = await this.quizChannel.presence.get()
     const clientCount = presence.length
     console.log(`${clientCount} clients connected`)
     if (clientCount >= this.minClientCount) {
@@ -76,9 +90,7 @@ class Quiz {
   askNextQuestion() {
     if (this.state !== 'running') return
 
-    const currentQuestionIndex = this.nextQuestionIndex
-    const question = this.questions[this.nextQuestionIndex]
-    this.nextQuestionIndex++
+    const question = this.questions[this.currentQuestionId]
 
     if (!question) {
       // We've run out of questions
@@ -86,22 +98,65 @@ class Quiz {
       return
     }
 
-    console.log('Asking question', question)
-    this.channel.publish('question', {
-      questionId: currentQuestionIndex,
+    console.log('Asking question', this.currentQuestionId)
+    this.quizChannel.publish('question', {
+      questionId: this.currentQuestionId,
       question: question.question,
       options: question.options
     })
 
     setTimeout(() => {
+      this.currentQuestionId++
       this.askNextQuestion()
     }, this.timePerQuestion)
   }
 
+  onAnswer(message: Ably.Types.Message) {
+    const { questionId, answer } = message.data as {
+      questionId: number
+      answer: number
+    } // TODO: validate message has expected format
+
+    if (questionId !== this.currentQuestionId) {
+      console.log('Client responded too slowly or out of turn, ignoring')
+    }
+
+    console.log(
+      `Got answer for client ${message.clientId}: ${questionId}: ${answer}`
+    )
+
+    this.clientAnswers.push({
+      clientId: message.clientId,
+      questionId,
+      answer
+    })
+  }
+
   finishQuiz() {
     if (this.state !== 'running') return
-    console.log('finishing quiz')
+    console.log('Finishing quiz')
+    this.scoreQuiz()
     this.state = 'finished'
+  }
+
+  scoreQuiz() {
+    const scores: Record<string, number> = {}
+    for (const { clientId, questionId, answer } of this.clientAnswers) {
+      const question = this.questions[questionId]
+      const correct = question?.answer === answer
+      scores[clientId] ||= 0
+      if (correct) {
+        scores[clientId] += 1
+      }
+    }
+
+    const leaderboard = Object.entries(scores).map(([clientId, score]) => ({
+      clientId,
+      score
+    }))
+    leaderboard.sort((a, b) => a.score - b.score).reverse()
+
+    this.quizChannel.publish('leaderboard', leaderboard)
   }
 }
 
