@@ -1,49 +1,23 @@
-import express from 'express'
-import dotenv from 'dotenv'
 import * as Ably from 'ably/promises'
-import * as uuid from 'uuid'
 
-dotenv.config()
-
-const app = express()
-
-const ABLY_API_KEY = process.env.ABLY_API_KEY
-if (!ABLY_API_KEY) {
-  console.error('Please set ABLY_API_KEY environment variable')
-  process.exit(1)
+type QuizOptions = {
+  realtime: Ably.Realtime
+  quizChannelName: string
+  answersChannelName: string
+  clientIdsToNames: Record<string, string>
 }
-const PORT = parseInt(process.env.PORT || '5000')
-const HOST = process.env.HOST || 'localhost'
-const QUIZ_CHANNEL_NAME = 'quiz'
-const ANSWERS_CHANNEL_NAME = 'answers'
 
-const ably = new Ably.Rest({ key: ABLY_API_KEY })
-
-const clientIdToName: Record<string, string> = {}
-
-app.post('/client/token', async (req, res) => {
-  const clientId = uuid.v4()
-  clientIdToName[clientId] = String(req.query.name || 'Anonymous')
-  const token = await ably.auth.requestToken({
-    clientId,
-    capability: {
-      // Only the server can publish to the quiz channel
-      [QUIZ_CHANNEL_NAME]: ['subscribe', 'presence'],
-      // Clients can only publish to the answers channel so they can't see other client's answers
-      [ANSWERS_CHANNEL_NAME]: ['publish']
-    }
-  })
-  console.log('Token requested')
-  res.json(token)
-})
-
-app.listen(PORT, HOST, () => {
-  console.log(`Server listening on ${HOST}:${PORT}`)
-})
-
-class Quiz {
-  minClientCount = 2
+export class Quiz {
+  // Quizes start in the 'waiting' state until there are at least
+  // minPlayerCount clients in the channel's presence set.
+  // It then transitions to the 'running' state, where it sends a question
+  // to the clients every timePerQuestion ms.
+  // Once all questions are sent, the quiz sends the scores to the clients
+  // and transitions to the 'finished' state
   state: 'waiting' | 'running' | 'finished' = 'waiting'
+  minPlayerCount = 2
+  timePerQuestion = 5000 // ms
+  clientIdsToNames: Record<string, string>
   quizChannel: Ably.Types.RealtimeChannelPromise
   answersChannel: Ably.Types.RealtimeChannelPromise
   questions = [
@@ -66,41 +40,44 @@ class Quiz {
   }> = []
 
   currentQuestionId = 0
-  timePerQuestion = 5000 // ms
 
-  constructor() {
-    const realtime = new Ably.Realtime({ key: ABLY_API_KEY })
-
-    this.quizChannel = realtime.channels.get(QUIZ_CHANNEL_NAME)
+  constructor({
+    realtime,
+    quizChannelName,
+    answersChannelName,
+    clientIdsToNames
+  }: QuizOptions) {
+    this.clientIdsToNames = clientIdsToNames
+    this.quizChannel = realtime.channels.get(quizChannelName)
     this.quizChannel.presence.subscribe('enter', () => {
-      console.log('Client connected')
-      this.startQuizIfEnoughClients()
+      console.log('Player connected')
+      this.startQuizIfEnoughPlayers()
     })
 
-    this.answersChannel = realtime.channels.get(ANSWERS_CHANNEL_NAME)
+    this.answersChannel = realtime.channels.get(answersChannelName)
     this.answersChannel.subscribe('answer', (message) => {
       this.onAnswer(message)
     })
   }
 
-  async startQuizIfEnoughClients() {
+  private async startQuizIfEnoughPlayers() {
     if (this.state !== 'waiting') return
     const presence = await this.quizChannel.presence.get()
-    const clientCount = presence.length
-    console.log(`${clientCount} clients connected`)
-    if (clientCount >= this.minClientCount) {
+    const playerCount = presence.length
+    console.log(`${playerCount} players connected`)
+    if (playerCount >= this.minPlayerCount) {
       this.startQuiz()
     }
   }
 
-  startQuiz() {
+  private startQuiz() {
     if (this.state !== 'waiting') return
     console.log('Starting quiz')
     this.state = 'running'
     this.askNextQuestion()
   }
 
-  askNextQuestion() {
+  private askNextQuestion() {
     if (this.state !== 'running') return
 
     const question = this.questions[this.currentQuestionId]
@@ -124,7 +101,7 @@ class Quiz {
     }, this.timePerQuestion)
   }
 
-  onAnswer(message: Ably.Types.Message) {
+  private onAnswer(message: Ably.Types.Message) {
     const { questionId, answer } = message.data as {
       questionId: number
       answer: number
@@ -145,14 +122,14 @@ class Quiz {
     })
   }
 
-  finishQuiz() {
+  private finishQuiz() {
     if (this.state !== 'running') return
     console.log('Finishing quiz')
     this.scoreQuiz()
     this.state = 'finished'
   }
 
-  scoreQuiz() {
+  private scoreQuiz() {
     const scores: Record<string, number> = {}
     for (const { clientId, questionId, answer } of this.clientAnswers) {
       const question = this.questions[questionId]
@@ -166,12 +143,10 @@ class Quiz {
     const leaderboard = Object.entries(scores).map(([clientId, score]) => ({
       clientId,
       score,
-      name: clientIdToName[clientId]
+      name: this.clientIdsToNames[clientId]
     }))
     leaderboard.sort((a, b) => a.score - b.score).reverse()
 
     this.quizChannel.publish('leaderboard', leaderboard)
   }
 }
-
-const quiz = new Quiz()
