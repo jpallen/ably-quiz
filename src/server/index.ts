@@ -52,5 +52,19 @@ const quiz = new Quiz({
   realtime,
   quizChannelName: QUIZ_CHANNEL_NAME,
   answersChannelName: ANSWERS_CHANNEL_NAME,
-  clientIdsToNames
+  clientIdsToNames,
+  minPlayerCount: 2,
+  timePerQuestion: 5000,
+  questions: [
+    {
+      question: 'Question 1',
+      options: ['Correct', 'Wrong', 'Incorrect'],
+      answer: 0
+    },
+    {
+      question: 'Question 2',
+      options: ['Wrong', 'Correct', 'Incorrect'],
+      answer: 1
+    }
+  ]
 })

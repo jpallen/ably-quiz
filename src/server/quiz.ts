@@ -1,6 +1,15 @@
 import * as Ably from 'ably/promises'
 
+type Question = {
+  question: string
+  options: string[]
+  answer: number // Index of the correct answer in options
+}
+
 type QuizOptions = {
+  minPlayerCount: number
+  timePerQuestion: number
+  questions: Question[]
   realtime: Ably.Realtime
   quizChannelName: string
   answersChannelName: string
@@ -15,23 +24,12 @@ export class Quiz {
   // Once all questions are sent, the quiz sends the scores to the clients
   // and transitions to the 'finished' state
   state: 'waiting' | 'running' | 'finished' = 'waiting'
-  minPlayerCount = 2
-  timePerQuestion = 5000 // ms
+  minPlayerCount: number
+  timePerQuestion: number
+  questions: Question[]
   clientIdsToNames: Record<string, string>
   quizChannel: Ably.Types.RealtimeChannelPromise
   answersChannel: Ably.Types.RealtimeChannelPromise
-  questions = [
-    {
-      question: 'Question 1',
-      options: ['Correct', 'Wrong', 'Incorrect'],
-      answer: 0
-    },
-    {
-      question: 'Question 2',
-      options: ['Wrong', 'Correct', 'Incorrect'],
-      answer: 1
-    }
-  ]
 
   clientAnswers: Array<{
     clientId: string
@@ -40,14 +38,22 @@ export class Quiz {
   }> = []
 
   currentQuestionId = 0
+  nextQuestionTimeout?: NodeJS.Timeout
 
   constructor({
     realtime,
     quizChannelName,
     answersChannelName,
-    clientIdsToNames
+    clientIdsToNames,
+    minPlayerCount,
+    timePerQuestion,
+    questions
   }: QuizOptions) {
     this.clientIdsToNames = clientIdsToNames
+    this.minPlayerCount = minPlayerCount
+    this.timePerQuestion = timePerQuestion
+    this.questions = questions
+
     this.quizChannel = realtime.channels.get(quizChannelName)
     this.quizChannel.presence.subscribe('enter', () => {
       console.log('Player connected')
@@ -60,7 +66,7 @@ export class Quiz {
     })
   }
 
-  private async startQuizIfEnoughPlayers() {
+  async startQuizIfEnoughPlayers() {
     if (this.state !== 'waiting') return
     const presence = await this.quizChannel.presence.get()
     const playerCount = presence.length
@@ -95,7 +101,7 @@ export class Quiz {
       options: question.options
     })
 
-    setTimeout(() => {
+    this.nextQuestionTimeout = setTimeout(() => {
       this.currentQuestionId++
       this.askNextQuestion()
     }, this.timePerQuestion)
