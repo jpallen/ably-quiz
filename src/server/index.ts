@@ -54,17 +54,17 @@ const quiz = new Quiz({
   answersChannelName: ANSWERS_CHANNEL_NAME,
   clientIdsToNames,
   minPlayerCount: 2,
-  timePerQuestion: 5000,
+  timePerQuestion: 30000,
   questions: [
     {
-      question: 'Question 1',
-      options: ['Correct', 'Wrong', 'Incorrect'],
-      answer: 0
+      question: 'What is the meaning of life?',
+      options: ['13', '42', '37'],
+      answer: 1
     },
     {
-      question: 'Question 2',
-      options: ['Wrong', 'Correct', 'Incorrect'],
-      answer: 1
+      question: "Is it pronounced 'Gif' or 'Gif'?",
+      options: ['Gif', 'Gif', 'Yes'],
+      answer: 0
     }
   ]
 })

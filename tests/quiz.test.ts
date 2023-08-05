@@ -7,6 +7,9 @@ describe('Quiz', () => {
     const presenceSet: string[] = []
 
     const quiz = new Quiz({
+      // TODO: This is bit of an ugly mock. Might consider creating
+      // a cleaner abstraction layer that is easier to mock, but that would
+      // be overkill for now.
       realtime: {
         channels: {
           get: jest.fn(() => {
