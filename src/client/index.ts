@@ -25,6 +25,11 @@ const main = async () => {
   console.log(`Hi ${name}!`)
   console.log('Waiting for enough players...')
 
+  // If we're waiting on a response from the user when another
+  // question arrives, we'll need to abort the prompt for their
+  // answer and move on. When asking a question, this will get set
+  // to a method that the next question can use to abort the
+  // previous one.
   let abortPreviousQuestion: null | (() => void) = null
 
   quizChannel.subscribe('question', async (message) => {
@@ -62,18 +67,25 @@ const main = async () => {
     })
   })
 
-  quizChannel.subscribe('leaderboard', (message) => {
+  quizChannel.subscribe('leaderboard', async (message) => {
     if (abortPreviousQuestion) {
       abortPreviousQuestion()
     }
     console.log()
     console.log('Results')
     console.table(message.data, ['name', 'score'])
-    process.exit(0)
+    await exitCleanly()
   })
 
   await quizChannel.presence.enter()
-  process.on('exit', () => quizChannel.presence.leave())
+  const exitCleanly = async () => {
+    await quizChannel.presence.leave()
+    process.exit()
+  }
+
+  process.on('SIGINT', async () => {
+    await exitCleanly()
+  })
 }
 
 main()

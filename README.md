@@ -1,9 +1,11 @@
 # Ably Realtime Quiz
 
-This repo implements a realtime quiz app with a central server and clients that connect to join the quiz.
+This repo implements a realtime quiz app. It provides a central server which manages the quiz and a client app that can connect to join a quiz.
 
-Communication between server and client happens primarly using Ably channels. There are two channels used:
-* `quiz` - Used to broadcast the questions and results to all clients. Clients can only subscribe to this channel.
+The server waits until enough clients have connected before starting the quiz, and then sends out a series of multiple choice questions for the clients to answer. Each question is open for a fixed time before the next one is sent. After all the questions have been asked, the server calculates the final scores and broadcasts the results to the clients.
+
+Communication between server and client happens primarly using Ably channels. Clients first ask the server for an Ably authentication token via an HTTP request. Then communication happens over two Ably channels:
+* `quiz` - Used to broadcast the questions and results from the server to all clients. Clients can only subscribe to this channel.
 * `answers` - Used by clients to respond with their answers. Clients can only publish to this channel, so cannot see other client's answers
 
 ## Installation
@@ -33,7 +35,7 @@ You can run the server with:
 $ npm run server
 ```
 
-Note that the server currently only support one quiz and session. You will need to restart the server to restart the quiz.
+Note that the server currently only supports one quiz and session. You will need to restart the server to restart the quiz.
 
 ## Running a client
 
@@ -53,9 +55,9 @@ $ npm run test
 
 ## Notes / Limitations
 
-- Clients don't correctly leaving the presence set on exit
+- Everything runs in 'dev' mode using ts-node. There is no build or deploy step
 - There is only one quiz session per server instance, and the server needs restarting to reset the quiz
 - If a client doesn't answer any questions they are not included in the scores
-- There is no recovery logic if a client disconnects mid way through a quiz. They cannot reconnect
+- There is no recovery logic if a client disconnects mid-way through a quiz. They cannot reconnect
 - All server state is in memory. If the server crashes, the state is lost
 - Logging is just done via console.log, is not very consistent and also appears in tests

@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "server": "nodemon -L --watch src/server --ext 'ts' --exec 'ts-node ./src/server'",
-    "client": "ts-node src/client.ts",
+    "client": "ts-node src/client",
     "test": "jest"
   },
   "author": "",
